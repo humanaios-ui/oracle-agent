@@ -33,6 +33,18 @@ class OracleAgentError(RuntimeError):
     """Raised when a Claude call does not produce the expected structured tool call."""
 
 
+def wrap_untrusted(source: str, content: str) -> str:
+    """Delimit externally-authored audit content (Witness/Witch-Warlock
+    markdown, Jester's own output) so text inside it that looks like an
+    instruction can't be mistaken for one. A Witness or Witch/Warlock file
+    is written by whoever opens that PR -- Jester and Oracle must treat its
+    contents as evidence to analyze, never as commands to follow (Copilot
+    review, PR #1). Callers pair this with a system-prompt rule that says
+    exactly that.
+    """
+    return f'<untrusted_evidence source="{source}">\n{content}\n</untrusted_evidence>'
+
+
 @dataclass
 class StructuredCallResult:
     data: dict[str, Any]

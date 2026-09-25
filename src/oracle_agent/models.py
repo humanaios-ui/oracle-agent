@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, NonNegativeInt, field_validator
 
 Severity = Literal["low", "medium", "high"]
 Validity = Literal["valid", "partial", "questionable", "speculative"]
@@ -71,7 +71,11 @@ class OracleDiagnosis(BaseModel):
     standing: str
     standing_explanation: str
     unknowns_preserved: list[str] = Field(default_factory=list)
-    remedy_scope_points: int
+    # NonNegativeInt, not int: this counts distinct remedy fixes needed. The
+    # strict tool schema also sets minimum: 0, but a model response bypassing
+    # that (or a hand-constructed OracleDiagnosis) shouldn't be able to claim
+    # a negative fix count (Copilot review, PR #1).
+    remedy_scope_points: NonNegativeInt
     remedy_outline: str
 
 

@@ -58,13 +58,35 @@ jobs:
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
           echo "incident_id=$ID" >> "$GITHUB_OUTPUT"
 
-      - name: Extract audit files from the merged commit (data only)
+      - name: Refuse a merge that rewrites Witness evidence
         env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          INCIDENT_DIR: ${{ steps.incident.outputs.dir }}
+        run: |
+          # The trigger only requires 02-WITCH_WARLOCK.md to have changed --
+          # nothing stops the same merge from also editing 01-WITNESS.md,
+          # which should already be settled by the (separate) Witness PR
+          # that merged earlier. Without this check, Oracle would silently
+          # synthesize against Witness text a Witch/Warlock PR just rewrote
+          # (Copilot review, PR #1).
+          if ! git cat-file -e "$BASE_SHA:$INCIDENT_DIR/01-WITNESS.md" 2>/dev/null; then
+            echo "$INCIDENT_DIR/01-WITNESS.md does not exist at the pre-merge base commit. The Witness PR must merge before the Witch/Warlock PR." >&2
+            exit 1
+          fi
+          if ! git diff --quiet "$BASE_SHA" "$MERGE_SHA" -- "$INCIDENT_DIR/01-WITNESS.md"; then
+            echo "This merge modifies $INCIDENT_DIR/01-WITNESS.md. A Witch/Warlock PR must not rewrite Witness evidence -- put that change in its own PR." >&2
+            exit 1
+          fi
+
+      - name: Extract audit files (Witness from the trusted base, Witch/Warlock from the merge)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
           INCIDENT_DIR: ${{ steps.incident.outputs.dir }}
         run: |
           mkdir -p "$INCIDENT_DIR"
-          git show "$MERGE_SHA:$INCIDENT_DIR/01-WITNESS.md" > "$INCIDENT_DIR/01-WITNESS.md"
+          git show "$BASE_SHA:$INCIDENT_DIR/01-WITNESS.md" > "$INCIDENT_DIR/01-WITNESS.md"
           git show "$MERGE_SHA:$INCIDENT_DIR/02-WITCH_WARLOCK.md" > "$INCIDENT_DIR/02-WITCH_WARLOCK.md"
 
       - name: Extract Witness PR number

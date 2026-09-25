@@ -13,7 +13,7 @@ Oracle Agent never makes the remedy decision, never closes an unknown Jester rai
 ## Quick start
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt -e .
 export ANTHROPIC_API_KEY=...  # or `ant auth login`
 
 python -m oracle_agent.cli \

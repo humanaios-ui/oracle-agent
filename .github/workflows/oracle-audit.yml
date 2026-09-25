@@ -14,14 +14,34 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # Check out the repo as it stood BEFORE this PR's own changes landed
+      # (base.sha), not the merge commit. A Witch/Warlock PR is only
+      # required to touch audits/**/02-WITCH_WARLOCK.md by the trigger
+      # filter -- nothing stops it from also editing pyproject.toml or
+      # src/oracle_agent/* in the same merge. Checking out the merge
+      # commit would then `pip install -e .` and execute that PR's own
+      # code with this job's write token and ANTHROPIC_API_KEY (Copilot
+      # review finding, PR #1). base.sha predates this PR's changes, so
+      # the tool code that runs here can't have been altered by it; the
+      # PR's actual audit content is pulled in below as inert text via
+      # `git show`, never installed or executed.
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
+
+      - name: Fetch merged commit (its content is read as data only, never executed)
+        env:
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: git fetch origin "$MERGE_SHA"
 
       - name: Determine incident directory
         id: incident
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
-          FILE=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" -- 'audits/**/02-WITCH_WARLOCK.md' | head -n1)
+          FILE=$(git diff --name-only "$BASE_SHA" "$MERGE_SHA" -- 'audits/**/02-WITCH_WARLOCK.md' | head -n1)
           if [ -z "$FILE" ]; then
             echo "No 02-WITCH_WARLOCK.md changed in this PR; nothing to do." >&2
             exit 1
@@ -30,6 +50,15 @@ jobs:
           ID=$(basename "$DIR")
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
           echo "incident_id=$ID" >> "$GITHUB_OUTPUT"
+
+      - name: Extract audit files from the merged commit (data only)
+        env:
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          INCIDENT_DIR: ${{ steps.incident.outputs.dir }}
+        run: |
+          mkdir -p "$INCIDENT_DIR"
+          git show "$MERGE_SHA:$INCIDENT_DIR/01-WITNESS.md" > "$INCIDENT_DIR/01-WITNESS.md"
+          git show "$MERGE_SHA:$INCIDENT_DIR/02-WITCH_WARLOCK.md" > "$INCIDENT_DIR/02-WITCH_WARLOCK.md"
 
       - name: Extract Witness PR number
         id: witness_pr
@@ -69,6 +98,12 @@ jobs:
       - name: Open PR #3
         uses: peter-evans/create-pull-request@v6
         with:
+          # The working tree is checked out at base.sha, not main's current
+          # tip (see the checkout step above), so the base must be given
+          # explicitly: GitHub then diffs the new branch against the real
+          # current main, which already contains the extracted audit files
+          # (only the new 03-JESTER_ORACLE.md shows up as a change).
+          base: main
           commit-message: "Oracle Agent: ${{ steps.incident.outputs.incident_id }} diagnosis"
           branch: "oracle-agent/${{ steps.incident.outputs.incident_id }}"
           title: "Oracle: ${{ steps.incident.outputs.incident_id }} Diagnosis"

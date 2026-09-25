@@ -12,13 +12,21 @@ from typing import Optional
 from .models import JesterOutput, OracleOutput
 
 
+def _table_cell(value: str) -> str:
+    """Collapse whitespace (including embedded newlines) and escape pipes so a
+    multi-line or pipe-containing model response can't break a Markdown table
+    row into extra rows or columns."""
+    return " ".join(value.split()).replace("|", "\\|")
+
+
 def _challenges_table(jester_output: JesterOutput) -> str:
     if not jester_output.challenges:
         return "_No challenges generated._"
     rows = ["| Challenge | Step | Question | Severity |", "|---|---|---|---|"]
     for c in jester_output.challenges:
-        question = c.question.replace("|", "\\|")
-        rows.append(f"| {c.challenge_id} | {c.step} | {question} | {c.severity} |")
+        question = _table_cell(c.question)
+        step = _table_cell(c.step)
+        rows.append(f"| {c.challenge_id} | {step} | {question} | {c.severity} |")
     return "\n".join(rows)
 
 
@@ -50,9 +58,10 @@ def _steps_section(oracle_output: OracleOutput) -> str:
 def _extensions_section(oracle_output: OracleOutput) -> str:
     lines = ["| Extension | Jester challenges | Oracle assessment |", "|---|---|---|"]
     for e in oracle_output.extensions:
-        assessment = e.oracle_assessment.replace("|", "\\|")
-        challenges = e.jester_challenges.replace("|", "\\|")
-        lines.append(f"| {e.extension} | {challenges} | {assessment} |")
+        extension = _table_cell(e.extension)
+        assessment = _table_cell(e.oracle_assessment)
+        challenges = _table_cell(e.jester_challenges)
+        lines.append(f"| {extension} | {challenges} | {assessment} |")
     return "\n".join(lines)
 
 

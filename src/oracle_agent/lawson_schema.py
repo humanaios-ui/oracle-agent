@@ -1,4 +1,4 @@
-"""Reference constants for the Lawson Diagnostic Audit's 10-step / 5-extension
+"""Reference constants for the Lawson Diagnostic Audit's 7-step / 5-extension
 schema. See docs/ORACLE_SYNTHESIS_RULES.md and docs/JESTER_PROMPT_DESIGN.md
 (OI-ORACLE-01) for the full design.
 """

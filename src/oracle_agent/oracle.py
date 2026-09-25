@@ -9,10 +9,13 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from .claude_client import call_structured
+from .claude_client import OracleAgentError, call_structured
 from .models import JesterOutput, OracleOutput
 
 logger = logging.getLogger(__name__)
+
+REQUIRED_STEPS = frozenset(range(1, 8))
+REQUIRED_EXTENSIONS = frozenset("ABCDE")
 
 SYSTEM_PROMPT = """You are the Oracle in a Lawson Diagnostic Audit.
 
@@ -81,10 +84,12 @@ DIAGNOSIS_TOOL = {
             },
             "steps": {
                 "type": "array",
+                "minItems": 7,
+                "maxItems": 7,
                 "items": {
                     "type": "object",
                     "properties": {
-                        "step": {"type": "integer"},
+                        "step": {"type": "integer", "enum": [1, 2, 3, 4, 5, 6, 7]},
                         "witness_witch_warlock_finding": {"type": "string"},
                         "jester_challenges_on_this_step": {"type": "string"},
                         "oracle_integration": {"type": "string"},
@@ -102,6 +107,8 @@ DIAGNOSIS_TOOL = {
             },
             "extensions": {
                 "type": "array",
+                "minItems": 5,
+                "maxItems": 5,
                 "items": {
                     "type": "object",
                     "properties": {
@@ -142,6 +149,37 @@ DIAGNOSIS_TOOL = {
 }
 
 
+def _validate_shape(output: OracleOutput) -> None:
+    """Enforce the Steps 1-7 / Extensions A-E cardinality the Oracle contract
+    requires. The strict tool schema fixes array length and (for steps) valid
+    individual values, but not uniqueness or which extension letters showed
+    up -- a response with seven step-1 objects, or five extensions all
+    labeled "A", still passes the schema. Catch that here rather than
+    silently rendering a PR that claims the full sections are present.
+    """
+    step_numbers = [s.step for s in output.steps]
+    seen_steps = set(step_numbers)
+    duplicate_steps = {n for n in step_numbers if step_numbers.count(n) > 1}
+    missing_steps = REQUIRED_STEPS - seen_steps
+    if missing_steps or duplicate_steps:
+        raise OracleAgentError(
+            "Oracle diagnosis has an invalid Steps 1-7 set "
+            f"(missing={sorted(missing_steps)}, duplicate={sorted(duplicate_steps)})"
+        )
+
+    extension_letters = [e.extension.strip()[:1].upper() for e in output.extensions]
+    seen_extensions = set(extension_letters)
+    duplicate_extensions = {e for e in extension_letters if extension_letters.count(e) > 1}
+    missing_extensions = REQUIRED_EXTENSIONS - seen_extensions
+    unexpected_extensions = seen_extensions - REQUIRED_EXTENSIONS
+    if missing_extensions or duplicate_extensions or unexpected_extensions:
+        raise OracleAgentError(
+            "Oracle diagnosis has an invalid Extensions A-E set "
+            f"(missing={sorted(missing_extensions)}, duplicate={sorted(duplicate_extensions)}, "
+            f"unexpected={sorted(unexpected_extensions)})"
+        )
+
+
 def run_oracle(
     witness_markdown: str,
     witch_warlock_markdown: str,
@@ -170,6 +208,7 @@ def run_oracle(
     data = dict(result.data)
     data["incident_id"] = incident_id
     output = OracleOutput(**data, output_tokens=result.output_tokens, model=result.model)
+    _validate_shape(output)
 
     missing = output.missing_challenge_ids(jester_output)
     if missing:

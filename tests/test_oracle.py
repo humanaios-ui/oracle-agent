@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from oracle_agent import claude_client
 from oracle_agent.models import JesterChallenge, JesterOutput
 from oracle_agent.oracle import run_oracle
@@ -33,7 +35,27 @@ JESTER_OUTPUT = JesterOutput(
 )
 
 
-def _diagnosis_payload(challenge_ids):
+def _full_steps():
+    return [
+        {
+            "step": n,
+            "witness_witch_warlock_finding": "finding",
+            "jester_challenges_on_this_step": "none",
+            "oracle_integration": "",
+            "revised_finding": "revised",
+        }
+        for n in range(1, 8)
+    ]
+
+
+def _full_extensions():
+    return [
+        {"extension": letter, "jester_challenges": "none", "oracle_assessment": "assessment"}
+        for letter in "ABCDE"
+    ]
+
+
+def _diagnosis_payload(challenge_ids, *, steps=None, extensions=None):
     return {
         "incident_id": "IC-WRONG",  # deliberately wrong, to test the override
         "jester_integration": [
@@ -45,18 +67,8 @@ def _diagnosis_payload(challenge_ids):
             }
             for cid in challenge_ids
         ],
-        "steps": [
-            {
-                "step": 1,
-                "witness_witch_warlock_finding": "finding",
-                "jester_challenges_on_this_step": "none",
-                "oracle_integration": "",
-                "revised_finding": "revised",
-            }
-        ],
-        "extensions": [
-            {"extension": "A", "jester_challenges": "none", "oracle_assessment": "assessment"}
-        ],
+        "steps": steps if steps is not None else _full_steps(),
+        "extensions": extensions if extensions is not None else _full_extensions(),
         "diagnosis": {
             "mechanism_diagnosis": ["BOUNDARY-FAILURE"],
             "mechanism_uncertainty": "",
@@ -95,3 +107,27 @@ def test_run_oracle_logs_when_challenge_dropped(monkeypatch, caplog):
 
     assert result.missing_challenge_ids(JESTER_OUTPUT) == ["J2"]
     assert any("Rule 1 violation" in record.message for record in caplog.records)
+
+
+def test_run_oracle_rejects_missing_step(monkeypatch):
+    incomplete_steps = _full_steps()[:-1]  # drop step 7
+    payload = _diagnosis_payload(["J1", "J2"], steps=incomplete_steps)
+    fake_client = _FakeClient(
+        [_FakeMessage([_FakeBlock("tool_use", "submit_oracle_diagnosis", payload)])]
+    )
+    monkeypatch.setattr(claude_client, "get_client", lambda: fake_client)
+
+    with pytest.raises(claude_client.OracleAgentError, match="Steps 1-7"):
+        run_oracle("witness", "witch warlock", JESTER_OUTPUT, incident_id="IC-063")
+
+
+def test_run_oracle_rejects_duplicate_extension(monkeypatch):
+    duplicate_extensions = _full_extensions()[:-1] + [_full_extensions()[0]]  # A appears twice, E missing
+    payload = _diagnosis_payload(["J1", "J2"], extensions=duplicate_extensions)
+    fake_client = _FakeClient(
+        [_FakeMessage([_FakeBlock("tool_use", "submit_oracle_diagnosis", payload)])]
+    )
+    monkeypatch.setattr(claude_client, "get_client", lambda: fake_client)
+
+    with pytest.raises(claude_client.OracleAgentError, match="Extensions A-E"):
+        run_oracle("witness", "witch warlock", JESTER_OUTPUT, incident_id="IC-063")

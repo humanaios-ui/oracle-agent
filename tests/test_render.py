@@ -83,3 +83,34 @@ def test_render_pr3_contains_required_sections():
     assert "MECHANISM_MITIGATED / ROOT_OF_TRUST_UNRESOLVED / PARTIALLY_CONTAINED" in markdown
     assert "Z2 Decision Required" in markdown
     assert "Remedy Scope:** 10 points" in markdown
+
+
+def test_challenges_table_survives_multiline_question():
+    jester_output = JesterOutput(
+        challenges=[
+            JesterChallenge(
+                challenge_id="J1",
+                step="3\nwith a newline",
+                question="Is this | actually two\nlines of text?",
+                target="Step 3",
+                why_it_matters="could break the table",
+                severity="high",
+                evidence_pointer=None,
+            )
+        ]
+    )
+    oracle_output = _sample_outputs()[1]
+
+    markdown = render_pr3("IC-063", jester_output, oracle_output)
+    table_lines = [
+        line
+        for line in markdown.splitlines()
+        if line.startswith("| J1") or "Is this" in line
+    ]
+
+    # The whole challenge must render as exactly one table row -- a raw
+    # embedded newline would otherwise split it into extra "rows" that
+    # break the Markdown table (Copilot review, PR #1).
+    assert len(table_lines) == 1
+    assert "\n" not in table_lines[0]
+    assert "Is this \\| actually two lines of text?" in table_lines[0]

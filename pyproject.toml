@@ -1,0 +1,33 @@
+[project]
+name = "oracle-agent"
+version = "0.1.0"
+description = "Lawson Diagnostic Audit automation (Jester + Oracle phases) -- OI-ORACLE-01"
+requires-python = ">=3.11"
+dependencies = [
+    # Exact-pinned, not a floating range: oracle-audit.yml pip-installs and
+    # executes this package with contents:write / pull-requests:write and
+    # ANTHROPIC_API_KEY. A future release (or a compromised one) landing
+    # automatically under an open range would run with those credentials
+    # (Copilot review, PR #1). Bump deliberately, and re-verify the audit
+    # workflow, rather than letting a range drift underneath it.
+    "anthropic==1.8.0",
+    "pydantic==2.13.5",
+    "fastmcp==4.0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1"]
+
+[project.scripts]
+oracle-agent = "oracle_agent.cli:main"
+
+[build-system]
+# Pinned like the runtime deps above: `pip install -e .` builds this package
+# in an isolated environment resolved from this requirement, and an
+# unbounded range would let a future setuptools release execute during the
+# privileged oracle-audit.yml run (Copilot review, PR #1).
+requires = ["setuptools==79.0.1"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,169 @@
+name: oracle-audit
+
+on:
+  pull_request:
+    types: [closed]
+    paths:
+      - "audits/**/02-WITCH_WARLOCK.md"
+
+jobs:
+  run-oracle-agent:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write  # to create the awaiting-oracle-review label if it doesn't exist yet
+    steps:
+      # Check out the repo as it stood BEFORE this PR's own changes landed
+      # (base.sha), not the merge commit. A Witch/Warlock PR is only
+      # required to touch audits/**/02-WITCH_WARLOCK.md by the trigger
+      # filter -- nothing stops it from also editing pyproject.toml or
+      # src/oracle_agent/* in the same merge. Checking out the merge
+      # commit would then `pip install -e .` and execute that PR's own
+      # code with this job's write token and ANTHROPIC_API_KEY (Copilot
+      # review finding, PR #1). base.sha predates this PR's changes, so
+      # the tool code that runs here can't have been altered by it; the
+      # PR's actual audit content is pulled in below as inert text via
+      # `git show`, never installed or executed.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 -- pinned, not a mutable tag (Copilot review, PR #1): this job holds write + secrets, so a retargeted tag or compromised release must not be able to execute here.
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+
+      - name: Fetch merged commit (its content is read as data only, never executed)
+        env:
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: git fetch origin "$MERGE_SHA"
+
+      - name: Determine incident directory
+        id: incident
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          FILES=$(git diff --name-only "$BASE_SHA" "$MERGE_SHA" -- 'audits/**/02-WITCH_WARLOCK.md')
+          COUNT=$(printf '%s\n' "$FILES" | grep -c . || true)
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No 02-WITCH_WARLOCK.md changed in this PR; nothing to do." >&2
+            exit 1
+          fi
+          if [ "$COUNT" -gt 1 ]; then
+            echo "This merge touches $COUNT incident directories (Witch/Warlock files below); refusing to silently pick one. Split into separate PRs, one incident per merge." >&2
+            printf '%s\n' "$FILES" >&2
+            exit 1
+          fi
+          FILE="$FILES"
+          DIR=$(dirname "$FILE")
+          ID=$(basename "$DIR")
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "incident_id=$ID" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse a merge that rewrites Witness evidence
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          INCIDENT_DIR: ${{ steps.incident.outputs.dir }}
+        run: |
+          # The trigger only requires 02-WITCH_WARLOCK.md to have changed --
+          # nothing stops the same merge from also editing 01-WITNESS.md,
+          # which should already be settled by the (separate) Witness PR
+          # that merged earlier. Without this check, Oracle would silently
+          # synthesize against Witness text a Witch/Warlock PR just rewrote
+          # (Copilot review, PR #1).
+          if ! git cat-file -e "$BASE_SHA:$INCIDENT_DIR/01-WITNESS.md" 2>/dev/null; then
+            echo "$INCIDENT_DIR/01-WITNESS.md does not exist at the pre-merge base commit. The Witness PR must merge before the Witch/Warlock PR." >&2
+            exit 1
+          fi
+          if ! git diff --quiet "$BASE_SHA" "$MERGE_SHA" -- "$INCIDENT_DIR/01-WITNESS.md"; then
+            echo "This merge modifies $INCIDENT_DIR/01-WITNESS.md. A Witch/Warlock PR must not rewrite Witness evidence -- put that change in its own PR." >&2
+            exit 1
+          fi
+
+      - name: Extract audit files (Witness from the trusted base, Witch/Warlock from the merge)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          INCIDENT_DIR: ${{ steps.incident.outputs.dir }}
+        run: |
+          mkdir -p "$INCIDENT_DIR"
+          git show "$BASE_SHA:$INCIDENT_DIR/01-WITNESS.md" > "$INCIDENT_DIR/01-WITNESS.md"
+          git show "$MERGE_SHA:$INCIDENT_DIR/02-WITCH_WARLOCK.md" > "$INCIDENT_DIR/02-WITCH_WARLOCK.md"
+
+      - name: Extract Witness PR number
+        id: witness_pr
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          NUM=$(printf '%s' "$PR_BODY" | grep -oE 'Witness( PR)?:? *#[0-9]+' | grep -oE '[0-9]+' | head -n1 || true)
+          echo "number=$NUM" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 -- pinned, see checkout above
+        with:
+          python-version: "3.11"
+
+      - name: Ensure the awaiting-oracle-review label exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # create-pull-request's `labels:` input only applies existing
+          # labels, it never creates them -- without this the label in
+          # AUDIT_WORKFLOW.md's documented workflow silently never gets
+          # applied on a repo that doesn't already have it (Copilot review,
+          # PR #1). Idempotent, but `|| true` alone would also swallow real
+          # failures (bad permissions, API errors) -- only ignore the
+          # specific "already exists" case; anything else fails the job.
+          OUTPUT=$(gh label create awaiting-oracle-review \
+            --repo "${{ github.repository }}" \
+            --color FBCA04 \
+            --description "Awaiting Z2 review of an Oracle Agent diagnosis" 2>&1) && echo "$OUTPUT" || {
+              if echo "$OUTPUT" | grep -qi "already exists"; then
+                echo "Label already exists, continuing."
+              else
+                echo "$OUTPUT" >&2
+                exit 1
+              fi
+            }
+
+      - run: pip install -r requirements.txt -e .
+
+      - name: Run Jester + Oracle
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          INCIDENT_DIR: ${{ steps.incident.outputs.dir }}
+          INCIDENT_ID: ${{ steps.incident.outputs.incident_id }}
+          WITNESS_PR: ${{ steps.witness_pr.outputs.number }}
+          WITCH_WARLOCK_PR: ${{ github.event.pull_request.number }}
+        run: |
+          ARGS=(
+            --witness "$INCIDENT_DIR/01-WITNESS.md"
+            --witch-warlock "$INCIDENT_DIR/02-WITCH_WARLOCK.md"
+            --incident-id "$INCIDENT_ID"
+            --out "$INCIDENT_DIR/03-JESTER_ORACLE.md"
+            --witch-warlock-pr "$WITCH_WARLOCK_PR"
+            --json-out "$INCIDENT_DIR/03-JESTER_ORACLE.json"
+          )
+          if [ -n "$WITNESS_PR" ]; then
+            ARGS+=(--witness-pr "$WITNESS_PR")
+          fi
+          python -m oracle_agent.cli "${ARGS[@]}"
+
+      - name: Open PR #3
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6 -- pinned, see checkout above
+        with:
+          # The working tree is checked out at base.sha, not main's current
+          # tip (see the checkout step above), so the base must be given
+          # explicitly: GitHub then diffs the new branch against the real
+          # current main, which already contains the extracted audit files
+          # (only the new 03-JESTER_ORACLE.md shows up as a change).
+          base: main
+          commit-message: "Oracle Agent: ${{ steps.incident.outputs.incident_id }} diagnosis"
+          branch: "oracle-agent/${{ steps.incident.outputs.incident_id }}"
+          title: "Oracle: ${{ steps.incident.outputs.incident_id }} Diagnosis"
+          body: |
+            Auto-generated by Oracle Agent (OI-ORACLE-01) from the Witch/Warlock merge in #${{ github.event.pull_request.number }}.
+
+            Ready for Z2 remedy decision. See `docs/AUDIT_WORKFLOW.md` for how to respond.
+          labels: awaiting-oracle-review
+          assignees: ${{ vars.ORACLE_REVIEWER }}
+          draft: true

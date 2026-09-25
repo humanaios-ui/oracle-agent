@@ -114,3 +114,26 @@ def test_challenges_table_survives_multiline_question():
     assert len(table_lines) == 1
     assert "\n" not in table_lines[0]
     assert "Is this \\| actually two lines of text?" in table_lines[0]
+
+
+def test_challenges_table_escapes_malicious_challenge_id():
+    jester_output = JesterOutput(
+        challenges=[
+            JesterChallenge(
+                challenge_id="J1|extra column\nextra row",
+                step="3",
+                question="normal question",
+                target="Step 3",
+                why_it_matters="an ID could split the table too",
+                severity="high",
+                evidence_pointer=None,
+            )
+        ]
+    )
+    oracle_output = _sample_outputs()[1]
+
+    markdown = render_pr3("IC-063", jester_output, oracle_output)
+    challenge_lines = [line for line in markdown.splitlines() if "extra" in line]
+
+    assert len(challenge_lines) == 1
+    assert "J1\\|extra column extra row" in challenge_lines[0]

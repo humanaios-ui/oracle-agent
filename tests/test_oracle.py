@@ -55,7 +55,7 @@ def _full_extensions():
     ]
 
 
-def _diagnosis_payload(challenge_ids, *, steps=None, extensions=None):
+def _diagnosis_payload(challenge_ids, *, steps=None, extensions=None, standing=None):
     return {
         "incident_id": "IC-WRONG",  # deliberately wrong, to test the override
         "jester_integration": [
@@ -72,7 +72,7 @@ def _diagnosis_payload(challenge_ids, *, steps=None, extensions=None):
         "diagnosis": {
             "mechanism_diagnosis": ["BOUNDARY-FAILURE"],
             "mechanism_uncertainty": "",
-            "standing": "MECHANISM_MITIGATED / ROOT_OF_TRUST_UNRESOLVED / PARTIALLY_CONTAINED",
+            "standing": standing or "MECHANISM_MITIGATED / ROOT_OF_TRUST_UNRESOLVED / PARTIALLY_CONTAINED",
             "standing_explanation": "explanation",
             "unknowns_preserved": ["unknown 1"],
             "remedy_scope_points": 3,
@@ -146,6 +146,42 @@ def test_run_oracle_rejects_malformed_extension_label(monkeypatch):
 
     with pytest.raises(claude_client.OracleAgentError, match="malformed extension label"):
         run_oracle("witness", "witch warlock", JESTER_OUTPUT, incident_id="IC-063")
+
+
+@pytest.mark.parametrize(
+    "bad_standing",
+    [
+        "MECHANISM_MITIGATED / ROOT_OF_TRUST_UNRESOLVED",  # only 2 components
+        "MECHANISM_TYPO / ROOT_OF_TRUST_UNRESOLVED / PARTIALLY_CONTAINED",  # bad mechanism value
+        "MITIGATED / ROOT_OF_TRUST_UNRESOLVED / PARTIALLY_CONTAINED",  # missing MECHANISM_ prefix
+        "MECHANISM_MITIGATED / UNRESOLVED / PARTIALLY_CONTAINED",  # missing ROOT_OF_TRUST_ prefix
+        "MECHANISM_MITIGATED / ROOT_OF_TRUST_UNRESOLVED / EXPOSURE_PARTIALLY_CONTAINED",  # exposure shouldn't be prefixed
+    ],
+)
+def test_run_oracle_rejects_malformed_standing(monkeypatch, bad_standing):
+    payload = _diagnosis_payload(["J1", "J2"], standing=bad_standing)
+    fake_client = _FakeClient(
+        [_FakeMessage([_FakeBlock("tool_use", "submit_oracle_diagnosis", payload)])]
+    )
+    monkeypatch.setattr(claude_client, "get_client", lambda: fake_client)
+
+    with pytest.raises(claude_client.OracleAgentError, match="standing"):
+        run_oracle("witness", "witch warlock", JESTER_OUTPUT, incident_id="IC-063")
+
+
+def test_run_oracle_prompt_serializes_jester_challenges_as_json(monkeypatch):
+    payload = _diagnosis_payload(["J1", "J2"])
+    fake_client = _FakeClient(
+        [_FakeMessage([_FakeBlock("tool_use", "submit_oracle_diagnosis", payload)])]
+    )
+    monkeypatch.setattr(claude_client, "get_client", lambda: fake_client)
+
+    run_oracle("witness", "witch warlock", JESTER_OUTPUT, incident_id="IC-063")
+
+    user_prompt = fake_client.messages.calls[0]["messages"][0]["content"]
+    # A Python repr would render this with single quotes; valid JSON requires
+    # double quotes around keys and string values.
+    assert '"challenge_id": "J1"' in user_prompt
 
 
 def test_run_oracle_accepts_labeled_extension_form(monkeypatch):

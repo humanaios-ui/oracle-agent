@@ -22,7 +22,11 @@ dev = ["pytest==9.1.1"]
 oracle-agent = "oracle_agent.cli:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+# Pinned like the runtime deps above: `pip install -e .` builds this package
+# in an isolated environment resolved from this requirement, and an
+# unbounded range would let a future setuptools release execute during the
+# privileged oracle-audit.yml run (Copilot review, PR #1).
+requires = ["setuptools==79.0.1"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

@@ -24,9 +24,10 @@ def _challenges_table(jester_output: JesterOutput) -> str:
         return "_No challenges generated._"
     rows = ["| Challenge | Step | Question | Severity |", "|---|---|---|---|"]
     for c in jester_output.challenges:
+        challenge_id = _table_cell(c.challenge_id)
         question = _table_cell(c.question)
         step = _table_cell(c.step)
-        rows.append(f"| {c.challenge_id} | {step} | {question} | {c.severity} |")
+        rows.append(f"| {challenge_id} | {step} | {question} | {c.severity} |")
     return "\n".join(rows)
 
 

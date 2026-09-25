@@ -6,11 +6,13 @@ unknown, and never recommends a specific fix.
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import Optional
 
 from .claude_client import OracleAgentError, call_structured
+from .lawson_schema import EXPOSURE_STATUS, MECHANISM_STATUS, ROOT_OF_TRUST_STATUS
 from .models import JesterOutput, OracleOutput
 
 logger = logging.getLogger(__name__)
@@ -160,6 +162,32 @@ DIAGNOSIS_TOOL = {
 }
 
 
+def _validate_standing(standing: str) -> None:
+    """Enforce the documented three-part standing format (ORACLE_SYNTHESIS_RULES.md
+    Phase 5): "MECHANISM_<status> / ROOT_OF_TRUST_<status> / <exposure-status>".
+    Note the asymmetry is deliberate and matches the design doc's own worked
+    example ("MECHANISM_MITIGATED / ROOT_OF_TRUST_UNRESOLVED / PARTIALLY_CONTAINED")
+    -- the first two components carry a prefix, the exposure component doesn't.
+    Without this, a typo or free-form model response renders as a
+    valid-looking diagnosis (Copilot review, PR #1).
+    """
+    parts = [p.strip() for p in standing.split("/")]
+    if len(parts) != 3:
+        raise OracleAgentError(
+            f"Oracle diagnosis standing must have 3 '/'-separated components, got: {standing!r}"
+        )
+    mechanism, root_of_trust, exposure = parts
+
+    if not mechanism.startswith("MECHANISM_") or mechanism[len("MECHANISM_"):] not in MECHANISM_STATUS:
+        raise OracleAgentError(f"Oracle diagnosis standing has an invalid mechanism component: {mechanism!r}")
+    if not root_of_trust.startswith("ROOT_OF_TRUST_") or root_of_trust[len("ROOT_OF_TRUST_"):] not in ROOT_OF_TRUST_STATUS:
+        raise OracleAgentError(
+            f"Oracle diagnosis standing has an invalid root-of-trust component: {root_of_trust!r}"
+        )
+    if exposure not in EXPOSURE_STATUS:
+        raise OracleAgentError(f"Oracle diagnosis standing has an invalid exposure component: {exposure!r}")
+
+
 def _validate_shape(output: OracleOutput) -> None:
     """Enforce the Steps 1-7 / Extensions A-E cardinality the Oracle contract
     requires. The strict tool schema fixes array length and (for steps) valid
@@ -194,6 +222,8 @@ def _validate_shape(output: OracleOutput) -> None:
             f"(missing={sorted(missing_extensions)}, duplicate={sorted(duplicate_extensions)})"
         )
 
+    _validate_standing(output.diagnosis.standing)
+
 
 def run_oracle(
     witness_markdown: str,
@@ -203,7 +233,10 @@ def run_oracle(
     incident_id: str,
     model: Optional[str] = None,
 ) -> OracleOutput:
-    jester_json = [c.model_dump() for c in jester_output.challenges]
+    # json.dumps, not str() -- the prompt promises a JSON array, and Python's
+    # repr of a list-of-dicts is single-quoted pseudo-JSON that becomes
+    # ambiguous the moment challenge text itself contains a quote character.
+    jester_json = json.dumps([c.model_dump() for c in jester_output.challenges])
     user_prompt = (
         f"INCIDENT: {incident_id}\n\n"
         f"WITNESS (Steps 1-3, Extensions A-D):\n{witness_markdown}\n\n"

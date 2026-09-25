@@ -13,6 +13,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      issues: write  # to create the awaiting-oracle-review label if it doesn't exist yet
     steps:
       # Check out the repo as it stood BEFORE this PR's own changes landed
       # (base.sha), not the merge commit. A Witch/Warlock PR is only
@@ -25,7 +26,7 @@ jobs:
       # the tool code that runs here can't have been altered by it; the
       # PR's actual audit content is pulled in below as inert text via
       # `git show`, never installed or executed.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 -- pinned, not a mutable tag (Copilot review, PR #1): this job holds write + secrets, so a retargeted tag or compromised release must not be able to execute here.
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
@@ -97,9 +98,24 @@ jobs:
           NUM=$(printf '%s' "$PR_BODY" | grep -oE 'Witness( PR)?:? *#[0-9]+' | grep -oE '[0-9]+' | head -n1 || true)
           echo "number=$NUM" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 -- pinned, see checkout above
         with:
           python-version: "3.11"
+
+      - name: Ensure the awaiting-oracle-review label exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # create-pull-request's `labels:` input only applies existing
+          # labels, it never creates them -- without this the label in
+          # AUDIT_WORKFLOW.md's documented workflow silently never gets
+          # applied on a repo that doesn't already have it (Copilot review,
+          # PR #1). Idempotent: exits non-zero (ignored) if it already exists.
+          gh label create awaiting-oracle-review \
+            --repo "${{ github.repository }}" \
+            --color FBCA04 \
+            --description "Awaiting Z2 review of an Oracle Agent diagnosis" \
+            || true
 
       - run: pip install -r requirements.txt -e .
 
@@ -125,7 +141,7 @@ jobs:
           python -m oracle_agent.cli "${ARGS[@]}"
 
       - name: Open PR #3
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6 -- pinned, see checkout above
         with:
           # The working tree is checked out at base.sha, not main's current
           # tip (see the checkout step above), so the base must be given

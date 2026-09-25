@@ -110,12 +110,20 @@ jobs:
           # labels, it never creates them -- without this the label in
           # AUDIT_WORKFLOW.md's documented workflow silently never gets
           # applied on a repo that doesn't already have it (Copilot review,
-          # PR #1). Idempotent: exits non-zero (ignored) if it already exists.
-          gh label create awaiting-oracle-review \
+          # PR #1). Idempotent, but `|| true` alone would also swallow real
+          # failures (bad permissions, API errors) -- only ignore the
+          # specific "already exists" case; anything else fails the job.
+          OUTPUT=$(gh label create awaiting-oracle-review \
             --repo "${{ github.repository }}" \
             --color FBCA04 \
-            --description "Awaiting Z2 review of an Oracle Agent diagnosis" \
-            || true
+            --description "Awaiting Z2 review of an Oracle Agent diagnosis" 2>&1) && echo "$OUTPUT" || {
+              if echo "$OUTPUT" | grep -qi "already exists"; then
+                echo "Label already exists, continuing."
+              else
+                echo "$OUTPUT" >&2
+                exit 1
+              fi
+            }
 
       - run: pip install -r requirements.txt -e .
 

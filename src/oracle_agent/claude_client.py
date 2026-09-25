@@ -41,8 +41,14 @@ def wrap_untrusted(source: str, content: str) -> str:
     contents as evidence to analyze, never as commands to follow (Copilot
     review, PR #1). Callers pair this with a system-prompt rule that says
     exactly that.
+
+    Escapes angle brackets in `content` first: without that, evidence
+    containing a literal "</untrusted_evidence>" could close the wrapper
+    early and place injected text outside the delimited region, defeating
+    the whole point of wrapping it (Copilot review, PR #1, second pass).
     """
-    return f'<untrusted_evidence source="{source}">\n{content}\n</untrusted_evidence>'
+    escaped = content.replace("<", "&lt;").replace(">", "&gt;")
+    return f'<untrusted_evidence source="{source}">\n{escaped}\n</untrusted_evidence>'
 
 
 @dataclass

@@ -15,8 +15,15 @@ from .models import JesterOutput, OracleOutput
 def _table_cell(value: str) -> str:
     """Collapse whitespace (including embedded newlines) and escape pipes so a
     multi-line or pipe-containing model response can't break a Markdown table
-    row into extra rows or columns."""
-    return " ".join(value.split()).replace("|", "\\|")
+    row into extra rows or columns.
+
+    Backslashes are escaped first, then pipes: a value already containing
+    "\\|" would otherwise come out as "\\\\|" -- two backslashes (an escaped,
+    literal backslash in Markdown) followed by an unescaped pipe, so the
+    pipe would still act as a column separator (Copilot review, PR #1).
+    """
+    collapsed = " ".join(value.split())
+    return collapsed.replace("\\", "\\\\").replace("|", "\\|")
 
 
 def _challenges_table(jester_output: JesterOutput) -> str:

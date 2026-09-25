@@ -1,9 +1,13 @@
 """Jester: adversarial challenge generator (OI-ORACLE-01 D1).
 
 Reads Witness + Witch/Warlock markdown and returns 3-5 adversarial
-challenges. Jester never proposes remedies, never closes unknowns, and
-never decides what is true -- see docs/JESTER_PROMPT_DESIGN.md for the
-full design rationale, severity scale, and anti-patterns.
+challenges -- occasionally fewer (never zero) when JESTER_PROMPT_DESIGN.md's
+own quality-over-quantity rule applies (procedural rule 7: "if you find
+fewer than 3 substantive challenges, return what you have"), which is why
+CHALLENGE_TOOL's schema floor is 1, not 3. Jester never proposes remedies,
+never closes unknowns, and never decides what is true -- see
+docs/JESTER_PROMPT_DESIGN.md for the full design rationale, severity
+scale, and anti-patterns.
 """
 from __future__ import annotations
 

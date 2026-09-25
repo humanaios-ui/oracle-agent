@@ -4,7 +4,7 @@ Automates the **Jester** and **Oracle** phases of a Lawson Diagnostic Audit (OI-
 
 Given a Witness PR and a Witch/Warlock PR for an incident, Oracle Agent:
 
-1. Runs **Jester** — generates 3-5 adversarial challenges against the Witness/Witch-Warlock findings.
+1. Runs **Jester** — generates 3-5 adversarial challenges against the Witness/Witch-Warlock findings (occasionally fewer, never zero, when fewer than 3 are substantive -- quality over quantity, per `docs/JESTER_PROMPT_DESIGN.md`).
 2. Runs **Oracle** — synthesizes Witness + Witch/Warlock + Jester into a single diagnosis (mechanism, standing, preserved unknowns, remedy scope).
 3. Renders PR #3 markdown, ready for Z2 review.
 

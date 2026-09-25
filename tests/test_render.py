@@ -137,3 +137,30 @@ def test_challenges_table_escapes_malicious_challenge_id():
 
     assert len(challenge_lines) == 1
     assert "J1\\|extra column extra row" in challenge_lines[0]
+
+
+def test_challenges_table_escapes_backslash_before_pipe():
+    # Escaping "|" alone isn't enough when the value already has a
+    # backslash: naively replacing "|" -> "\|" turns an existing "\|" into
+    # "\\|", which Markdown reads as an escaped backslash followed by an
+    # *unescaped* pipe -- still a column separator (Copilot review, PR #1).
+    jester_output = JesterOutput(
+        challenges=[
+            JesterChallenge(
+                challenge_id="J1",
+                step="3",
+                question=r"Is C:\Users\name|admin a valid path?",
+                target="Step 3",
+                why_it_matters="a pre-existing backslash could unescape the pipe",
+                severity="high",
+                evidence_pointer=None,
+            )
+        ]
+    )
+    oracle_output = _sample_outputs()[1]
+
+    markdown = render_pr3("IC-063", jester_output, oracle_output)
+    challenge_lines = [line for line in markdown.splitlines() if "Users" in line]
+
+    assert len(challenge_lines) == 1
+    assert r"C:\\Users\\name\|admin" in challenge_lines[0]

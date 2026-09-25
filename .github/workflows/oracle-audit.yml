@@ -41,11 +41,18 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
-          FILE=$(git diff --name-only "$BASE_SHA" "$MERGE_SHA" -- 'audits/**/02-WITCH_WARLOCK.md' | head -n1)
-          if [ -z "$FILE" ]; then
+          FILES=$(git diff --name-only "$BASE_SHA" "$MERGE_SHA" -- 'audits/**/02-WITCH_WARLOCK.md')
+          COUNT=$(printf '%s\n' "$FILES" | grep -c . || true)
+          if [ "$COUNT" -eq 0 ]; then
             echo "No 02-WITCH_WARLOCK.md changed in this PR; nothing to do." >&2
             exit 1
           fi
+          if [ "$COUNT" -gt 1 ]; then
+            echo "This merge touches $COUNT incident directories (Witch/Warlock files below); refusing to silently pick one. Split into separate PRs, one incident per merge." >&2
+            printf '%s\n' "$FILES" >&2
+            exit 1
+          fi
+          FILE="$FILES"
           DIR=$(dirname "$FILE")
           ID=$(basename "$DIR")
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"

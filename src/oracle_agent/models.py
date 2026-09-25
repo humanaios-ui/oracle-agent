@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 Severity = Literal["low", "medium", "high"]
 Validity = Literal["valid", "partial", "questionable", "speculative"]
@@ -27,6 +27,21 @@ class JesterOutput(BaseModel):
     challenges: list[JesterChallenge] = Field(default_factory=list)
     output_tokens: int = 0
     model: str = ""
+
+    @field_validator("challenges")
+    @classmethod
+    def _ids_non_empty_and_unique(cls, challenges: list[JesterChallenge]) -> list[JesterChallenge]:
+        # missing_challenge_ids() below compares challenge_id sets; a blank
+        # or duplicate ID would let Oracle silently drop a challenge while
+        # Rule 1's check still reports nothing missing (Copilot review, PR #1).
+        ids = [c.challenge_id for c in challenges]
+        blank = [i for i, cid in enumerate(ids) if not cid.strip()]
+        if blank:
+            raise ValueError(f"challenge_id must be non-empty (blank at index {blank})")
+        duplicates = {cid for cid in ids if ids.count(cid) > 1}
+        if duplicates:
+            raise ValueError(f"challenge_id values must be unique, got duplicates: {sorted(duplicates)}")
+        return challenges
 
 
 class JesterIntegration(BaseModel):

@@ -7,6 +7,7 @@ unknown, and never recommends a specific fix.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Optional
 
 from .claude_client import OracleAgentError, call_structured
@@ -16,6 +17,16 @@ logger = logging.getLogger(__name__)
 
 REQUIRED_STEPS = frozenset(range(1, 8))
 REQUIRED_EXTENSIONS = frozenset("ABCDE")
+
+# Matches the documented "A" or "A (Epistemic Status)" extension label forms
+# exactly -- unlike a bare first-character check, "Aardvark" or "A-typo"
+# don't match and are treated as malformed rather than as extension A.
+_EXTENSION_LABEL_RE = re.compile(r"^([A-E])(\s*\(.+\))?$")
+
+
+def _extension_letter(label: str) -> Optional[str]:
+    match = _EXTENSION_LABEL_RE.match(label.strip())
+    return match.group(1) if match else None
 
 SYSTEM_PROMPT = """You are the Oracle in a Lawson Diagnostic Audit.
 
@@ -167,16 +178,20 @@ def _validate_shape(output: OracleOutput) -> None:
             f"(missing={sorted(missing_steps)}, duplicate={sorted(duplicate_steps)})"
         )
 
-    extension_letters = [e.extension.strip()[:1].upper() for e in output.extensions]
+    extension_letters = [_extension_letter(e.extension) for e in output.extensions]
+    malformed = [e.extension for e, letter in zip(output.extensions, extension_letters) if letter is None]
+    if malformed:
+        raise OracleAgentError(f"Oracle diagnosis has malformed extension label(s): {malformed}")
+
+    # extension_letters are all guaranteed in A-E here (malformed labels were
+    # rejected above), so only missing/duplicate need checking.
     seen_extensions = set(extension_letters)
     duplicate_extensions = {e for e in extension_letters if extension_letters.count(e) > 1}
     missing_extensions = REQUIRED_EXTENSIONS - seen_extensions
-    unexpected_extensions = seen_extensions - REQUIRED_EXTENSIONS
-    if missing_extensions or duplicate_extensions or unexpected_extensions:
+    if missing_extensions or duplicate_extensions:
         raise OracleAgentError(
             "Oracle diagnosis has an invalid Extensions A-E set "
-            f"(missing={sorted(missing_extensions)}, duplicate={sorted(duplicate_extensions)}, "
-            f"unexpected={sorted(unexpected_extensions)})"
+            f"(missing={sorted(missing_extensions)}, duplicate={sorted(duplicate_extensions)})"
         )
 
 

@@ -131,3 +131,32 @@ def test_run_oracle_rejects_duplicate_extension(monkeypatch):
 
     with pytest.raises(claude_client.OracleAgentError, match="Extensions A-E"):
         run_oracle("witness", "witch warlock", JESTER_OUTPUT, incident_id="IC-063")
+
+
+def test_run_oracle_rejects_malformed_extension_label(monkeypatch):
+    # "Aardvark" starts with a valid letter but isn't one -- a naive
+    # first-character check would wrongly accept it as extension A.
+    malformed = _full_extensions()
+    malformed[0] = {**malformed[0], "extension": "Aardvark"}
+    payload = _diagnosis_payload(["J1", "J2"], extensions=malformed)
+    fake_client = _FakeClient(
+        [_FakeMessage([_FakeBlock("tool_use", "submit_oracle_diagnosis", payload)])]
+    )
+    monkeypatch.setattr(claude_client, "get_client", lambda: fake_client)
+
+    with pytest.raises(claude_client.OracleAgentError, match="malformed extension label"):
+        run_oracle("witness", "witch warlock", JESTER_OUTPUT, incident_id="IC-063")
+
+
+def test_run_oracle_accepts_labeled_extension_form(monkeypatch):
+    labeled = [
+        {**ext, "extension": f"{ext['extension']} (Some Description)"} for ext in _full_extensions()
+    ]
+    payload = _diagnosis_payload(["J1", "J2"], extensions=labeled)
+    fake_client = _FakeClient(
+        [_FakeMessage([_FakeBlock("tool_use", "submit_oracle_diagnosis", payload)])]
+    )
+    monkeypatch.setattr(claude_client, "get_client", lambda: fake_client)
+
+    result = run_oracle("witness", "witch warlock", JESTER_OUTPUT, incident_id="IC-063")
+    assert len(result.extensions) == 5

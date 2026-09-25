@@ -116,3 +116,21 @@ def test_run_jester_raises_after_two_failed_attempts(monkeypatch):
 
     with pytest.raises(claude_client.OracleAgentError):
         run_jester("witness md", "witch warlock md")
+
+
+def test_run_jester_rejects_duplicate_challenge_ids_from_model(monkeypatch):
+    from pydantic import ValidationError
+
+    duplicate_challenges = {
+        "challenges": [
+            {**VALID_CHALLENGES["challenges"][0]},
+            {**VALID_CHALLENGES["challenges"][0]},  # same challenge_id "J1" twice
+        ]
+    }
+    fake_client = _FakeClient(
+        [_FakeMessage([_FakeBlock("tool_use", "submit_jester_challenges", duplicate_challenges)])]
+    )
+    monkeypatch.setattr(claude_client, "get_client", lambda: fake_client)
+
+    with pytest.raises(ValidationError, match="duplicates"):
+        run_jester("witness md", "witch warlock md")

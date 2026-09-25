@@ -1,0 +1,8 @@
+# Per OI-ORACLE-01 repository setup (Z3 task). This repo currently has a
+# single account, so these entries document intended review ownership
+# rather than enforcing branch protection (which needs org-level setup
+# this account does not have).
+/src/oracle_agent/jester.py   @humanaios-ui
+/src/oracle_agent/oracle.py   @humanaios-ui
+/.github/workflows/           @humanaios-ui
+/docs/                        @humanaios-ui

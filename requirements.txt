@@ -1,0 +1,4 @@
+anthropic>=0.69.0
+pydantic>=2.7
+fastmcp>=2.0
+pytest>=8.0
